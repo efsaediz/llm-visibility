@@ -1,0 +1,44 @@
+{
+  "name": "llm-visibility-extension",
+  "private": true,
+  "version": "0.2.1",
+  "type": "module",
+  "description": "Chrome extension that captures conversations on AI chat interfaces, tracks brand visibility, and attributes answer sentences to cited sources. Local only, MIT licensed.",
+  "license": "MIT",
+  "keywords": [
+    "chrome-extension",
+    "llm",
+    "ai",
+    "seo",
+    "geo",
+    "visibility",
+    "citation-tracking",
+    "brand-monitoring"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "type-check": "tsc -b --noEmit"
+  },
+  "dependencies": {
+    "dexie": "^4.0.8",
+    "dexie-react-hooks": "^1.1.7",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.0.0-beta.26",
+    "@types/chrome": "^0.0.270",
+    "@types/node": "^25.6.0",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.7"
+  }
+}
