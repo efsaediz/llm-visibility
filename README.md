@@ -64,7 +64,8 @@ You should see a green **LV** icon in the Chrome toolbar. Pin it for easy
 access.
 
 > A pre-built `dist/` zip is attached to each tagged release on the
-> [Releases page](#) — non-developers can use that without running `npm install`.
+> [Releases page](https://github.com/efsaediz/llm-visibility/releases) —
+> non-developers can use that without running `npm install`.
 
 ---
 

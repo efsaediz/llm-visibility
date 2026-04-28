@@ -70,7 +70,7 @@ as manually-entered prompts.
 ## Third-party sources
 
 LLM Visibility is open source. You can audit every line of code at
-[the project repository](https://github.com/) (link added once published).
+[github.com/efsaediz/llm-visibility](https://github.com/efsaediz/llm-visibility).
 The extension contains no minified third-party SDKs that "phone home". The
 only runtime dependencies are React, Dexie (IndexedDB wrapper), Zod (runtime
 type validation), and dexie-react-hooks — all standard, all open source.
