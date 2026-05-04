@@ -388,22 +388,23 @@ function safeDomain(url: string): string {
 function cleanAnswerText(raw: string): string {
   if (!raw) return '';
   let text = raw;
-  // ChatGPT's inline markers use three Private Use Area characters per
-  // marker — OPEN tagname SEP payload CLOSE — anywhere in the BMP PUA range
-  // (U+E000–U+F8FF). The earlier non-greedy two-PUA pattern only ate
-  // OPEN..SEP and left the (often huge JSON) payload in the visible text;
-  // that's what produced 100%-unsourced captures full of "entity[...]"
-  // blobs. Match all three PUA chars with non-PUA content between them.
-  text = text.replace(
-    /[-][^-]*[-][^-]*[-]/g,
-    '',
-  );
-  // Two-PUA fallback for markers without an internal separator (rarer).
-  text = text.replace(/[-][^-]*[-]/g, '');
-  // Lone PUA leftovers.
-  text = text.replace(/[-]/g, '');
-  // [tag]...[/tag] widget payloads. Covers the bracket-form variants we've
-  // observed: citations, products, explore_more, business entities, and the
+  // ChatGPT's canonical inline-marker format wraps each marker in
+  // U+E200 (open) ... U+E201 (close), with U+E202 sometimes used as an
+  // internal separator. Greedy non-greedy match consumes the WHOLE marker
+  // — open through close, including separators and JSON payload — anchored
+  // on the SPECIFIC open/close code points so it can't bleed into real
+  // prose between markers. An earlier "any PUA char" triple-match ate
+  // chunks of legitimate text whenever two markers were separated by
+  // ordinary words (4 sentences came out as fragments like "i'da spor -").
+  text = text.replace(/\u{E200}[\s\S]*?\u{E201}/gu, '');
+  // Some variants flip open/close. Catch those as a backup pair.
+  text = text.replace(/\u{E203}[\s\S]*?\u{E204}/gu, '');
+  // Mop up orphan PUA chars from format drift. Single-char removal can't
+  // damage surrounding text — it's safe regardless of which code ChatGPT
+  // used for a particular variant.
+  text = text.replace(/[\u{E000}-\u{F8FF}]/gu, '');
+  // [tag]...[/tag] bracket-form widget payloads. Covers the variants we've
+  // observed: citations, products, explore_more, business entities, and
   // various search-context marker tags.
   text = text.replace(
     /\[(cite|products|explore_more|video|audio|image|news_search|video_search|search|browser|nav|entity|entity_metadata|business)\][\s\S]*?\[\/\1\]/g,

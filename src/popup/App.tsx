@@ -1664,7 +1664,7 @@ export default function App() {
       </div>
 
       <footer className="mt-2 text-[9px] text-slate-400">
-        v0.2.1 · Triple-PUA marker fix
+        v0.2.3 · Header + paren-aware splitter
       </footer>
 
       <CaptureDetailModal

@@ -12,7 +12,7 @@ export default defineManifest({
   name: 'LLM Visibility',
   description:
     'Capture conversations on AI chat interfaces, track brand visibility, attribute answers to cited sources. Open source, local only.',
-  version: '0.2.1',
+  version: '0.2.3',
   icons: ICONS,
   action: {
     default_popup: 'src/popup/index.html',

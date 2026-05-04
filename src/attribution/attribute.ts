@@ -80,7 +80,37 @@ function isMarkdownNoise(s: string): boolean {
   if (/^[\s#>*+\-_=]+$/.test(s)) return true;
   // Single emoji or punctuation glyph left behind by a marker strip.
   if (/^[\p{P}\p{S}]+$/u.test(s)) return true;
+  // Numbered/emoji-only header fragment that the sentence splitter created
+  // by breaking after the digit's period. E.g. "## ⚽ 2.", "### 4.",
+  // "## 👟 3." — pure structural marker with no info, used to inflate
+  // unsourced ratios. We allow up to 5 non-digit/non-period chars between
+  // the hashes and the digit so legit headers like "## Bölüm 2: Foo" stay.
+  if (/^#{1,6}\s+(?:[^\d.\n]{0,5})?\s*\d+\.?\s*$/u.test(s)) return true;
   return false;
+}
+
+/**
+ * Merge sentence pieces whose opening parenthesis is closed only in a later
+ * piece. The split regex doesn't know that "(örn." is an abbreviation
+ * inside a paren — it sees `.` followed by a digit and breaks there. Walk
+ * the pieces and re-attach until paren balance is restored.
+ */
+function mergeUnclosedParens(pieces: string[]): string[] {
+  const out: string[] = [];
+  let buffer = '';
+  for (const p of pieces) {
+    const candidate = buffer ? buffer + ' ' + p : p;
+    const opens = (candidate.match(/\(/g) || []).length;
+    const closes = (candidate.match(/\)/g) || []).length;
+    if (opens > closes) {
+      buffer = candidate;
+    } else {
+      out.push(candidate);
+      buffer = '';
+    }
+  }
+  if (buffer) out.push(buffer);
+  return out;
 }
 
 /**
@@ -102,7 +132,10 @@ export function splitSentences(text: string): string[] {
     if (!cleaned || isMarkdownNoise(cleaned)) continue;
     // Split on end-of-sentence punctuation followed by whitespace + capital-
     // ish char. Unicode \p{Lu} catches non-ASCII uppercase.
-    const pieces = cleaned.split(/(?<=[.!?])\s+(?=[\p{Lu}\p{N}"'(])/gu);
+    const rawPieces = cleaned.split(/(?<=[.!?])\s+(?=[\p{Lu}\p{N}"'(])/gu);
+    // Reattach pieces whose paren is opened but not yet closed — handles
+    // "(örn." abbreviations and similar parenthetical breaks.
+    const pieces = mergeUnclosedParens(rawPieces);
     for (const piece of pieces) {
       const t = piece.trim();
       if (!t || isMarkdownNoise(t)) continue;
