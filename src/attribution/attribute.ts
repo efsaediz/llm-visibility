@@ -94,19 +94,30 @@ function isMarkdownNoise(s: string): boolean {
  * piece. The split regex doesn't know that "(örn." is an abbreviation
  * inside a paren — it sees `.` followed by a digit and breaks there. Walk
  * the pieces and re-attach until paren balance is restored.
+ *
+ * Bound: cap how many pieces we'll buffer before giving up. A pathological
+ * input with permanently-unmatched `(` (broken markdown, copy-paste
+ * artefact) shouldn't make us hold the entire answer in one giant
+ * "sentence" — at that point breaking is more useful than waiting for a
+ * close that never comes.
  */
+const MAX_PAREN_MERGE_PIECES = 6;
+
 function mergeUnclosedParens(pieces: string[]): string[] {
   const out: string[] = [];
   let buffer = '';
+  let buffered = 0;
   for (const p of pieces) {
     const candidate = buffer ? buffer + ' ' + p : p;
     const opens = (candidate.match(/\(/g) || []).length;
     const closes = (candidate.match(/\)/g) || []).length;
-    if (opens > closes) {
+    if (opens > closes && buffered < MAX_PAREN_MERGE_PIECES) {
       buffer = candidate;
+      buffered++;
     } else {
       out.push(candidate);
       buffer = '';
+      buffered = 0;
     }
   }
   if (buffer) out.push(buffer);

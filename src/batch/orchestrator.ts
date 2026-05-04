@@ -99,8 +99,18 @@ async function runLoop(tabId: number) {
     state.items[i].status = 'running';
     await persistState();
 
+    // Arm the capture waiter BEFORE dispatching. ChatGPT can finish a short
+    // answer faster than the await chain back to runLoop, and if waiter
+    // setup happens after dispatch the CAPTURE_COMPLETE notification has
+    // nowhere to land — the prompt then hangs the full 90s timeout.
+    const { promise: capturePromise, disarm } = armCaptureWaiter(
+      CAPTURE_TIMEOUT_MS,
+    );
+
     const sendOk = await dispatchPrompt(tabId, state.items[i].prompt, state.freshChat);
     if (!sendOk.ok) {
+      // Dispatch failed — no capture coming for this prompt, release the waiter.
+      disarm();
       state.items[i].status = 'failed';
       state.items[i].error = sendOk.error ?? 'dispatch failed';
       await persistState();
@@ -109,7 +119,7 @@ async function runLoop(tabId: number) {
       continue;
     }
 
-    const rowId = await waitForNextCapture(CAPTURE_TIMEOUT_MS);
+    const rowId = await capturePromise;
     if (state.cancelled) break;
     if (rowId) {
       state.items[i].status = 'done';
@@ -149,6 +159,12 @@ async function dispatchPrompt(
     await trySend();
     return { ok: true };
   } catch (firstErr) {
+    // Bail fast if the tab is gone — happens when the user closes the
+    // chatgpt.com tab mid-batch. Otherwise chrome.tabs.reload silently fails
+    // and we burn 30s waiting for an onUpdated event that will never fire.
+    if (!(await tabExists(tabId))) {
+      return { ok: false, error: 'chatgpt.com tab was closed' };
+    }
     // Most common cause: the user's chatgpt.com tab still hosts a stale
     // content script from before the last extension reload. Reload the
     // tab once to inject the current build, then retry. Don't loop — if
@@ -169,31 +185,60 @@ async function dispatchPrompt(
   }
 }
 
-function waitForNextCapture(timeoutMs: number): Promise<string | null> {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = (val: string | null) => {
-      if (done) return;
-      done = true;
+/**
+ * Pre-arm the capture waiter and return a promise + disarm handle. Caller
+ * must dispatch the prompt AFTER calling this so a fast CAPTURE_COMPLETE
+ * (short answer, instant SSE) doesn't fall on a null waiter and time out.
+ */
+function armCaptureWaiter(timeoutMs: number): {
+  promise: Promise<string | null>;
+  disarm: () => void;
+} {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let resolveOuter!: (val: string | null) => void;
+  const promise = new Promise<string | null>((resolve) => {
+    resolveOuter = resolve;
+    captureWaiter = (rowId: string) => {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
       captureWaiter = null;
-      resolve(val);
+      resolve(rowId);
     };
-    captureWaiter = (rowId: string) => finish(rowId);
-    setTimeout(() => finish(null), timeoutMs);
+    timeoutId = setTimeout(() => {
+      captureWaiter = null;
+      resolve(null);
+    }, timeoutMs);
   });
+  const disarm = () => {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+    captureWaiter = null;
+    resolveOuter(null);
+  };
+  return { promise, disarm };
 }
 
 async function ensureChatGptTab(): Promise<number> {
-  const tabs = await chrome.tabs.query({ url: 'https://chatgpt.com/*' });
-  if (tabs.length > 0 && tabs[0].id != null) {
-    // Bring it forward so the user can see the automation. Optional but
-    // friendlier than running invisibly in the background.
-    await chrome.tabs.update(tabs[0].id, { active: true });
-    if (tabs[0].windowId != null) {
-      await chrome.windows.update(tabs[0].windowId, { focused: true });
-    }
-    return tabs[0].id;
+  // Prefer the active chatgpt.com tab in the focused window so we drive the
+  // conversation the user is currently looking at — picking tabs[0] from a
+  // browser with multiple ChatGPT tabs open frequently lands on the wrong
+  // one (different conversation or logged out).
+  const activeTabs = await chrome.tabs.query({
+    url: 'https://chatgpt.com/*',
+    active: true,
+    lastFocusedWindow: true,
+  });
+  if (activeTabs.length > 0 && activeTabs[0].id != null) {
+    return activeTabs[0].id;
   }
+  // Fall back to any chatgpt.com tab; bring it forward.
+  const allTabs = await chrome.tabs.query({ url: 'https://chatgpt.com/*' });
+  if (allTabs.length > 0 && allTabs[0].id != null) {
+    await chrome.tabs.update(allTabs[0].id, { active: true });
+    if (allTabs[0].windowId != null) {
+      await chrome.windows.update(allTabs[0].windowId, { focused: true });
+    }
+    return allTabs[0].id;
+  }
+  // No chatgpt.com tab open — create one.
   const created = await chrome.tabs.create({
     url: 'https://chatgpt.com/',
     active: true,
@@ -202,6 +247,21 @@ async function ensureChatGptTab(): Promise<number> {
   // Wait for the tab to finish loading so the content script is ready.
   await waitForTabComplete(created.id, 30_000);
   return created.id;
+}
+
+/**
+ * Returns true if the tab still exists. The orchestrator caches a tabId at
+ * batch start; if the user closes that tab mid-run, chrome.tabs.get throws.
+ * We use this to fail dispatches fast instead of hanging on a reload that
+ * targets a dead tab.
+ */
+async function tabExists(tabId: number): Promise<boolean> {
+  try {
+    await chrome.tabs.get(tabId);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function waitForTabComplete(tabId: number, timeoutMs: number): Promise<void> {
